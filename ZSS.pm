@@ -253,19 +253,40 @@ sub handle_PUT {
   my $request = $self->{request};
   my $env = $request->{env};
   my $store = $self->{buckets}->{$request->{bucket}}->{store};
-  
+
   my $key = $request->{key};
 
   my $source = $env->{HTTP_X_AMZ_COPY_SOURCE};
-  $source = uri_unescape($source); 
-  (my $sourceBucket, my $sourceKey) = $source =~ m/^\/([^\?\/]*)\/?([^\?]*)/;
 
-  # $self->log("Source: ".$sourceBucket."/bla/".$sourceKey."\nDestinationKey: ".$key."\n");
+  if ($source) {
+    # Copy File
+    $source = uri_unescape($source);
+    (my $sourceBucket, my $sourceKey) = $source =~ m/^\/([^\?\/]*)\/?([^\?]*)/;
 
-  if($store->link_files($sourceKey, $key)){
-   return respondXML(200, ['CopyObjectResult' => [ 'LastModified' => '2012', 'ETag' => 'bla']]);
+    # $self->log("Source: ".$sourceBucket."/bla/".$sourceKey."\nDestinationKey: ".$key."\n");
+
+    my $res = $store->link_files($sourceKey, $key);
+
+    $self->log($res);
+
+    if ($res) {
+      return respondXML(200, ['CopyObjectResult' => [ 'LastModified' => '2012', 'ETag' => 'bla']]);
+    } else {
+      return respondXML(500, ['Error' => ['Code' => 'InternalError']]);
+    }
+  } else {
+    # Normal PUT
+    my $input = $env->{'psgi.input'};
+    my $cl = $env->{CONTENT_LENGTH};
+    my $data;
+
+    if (($input->read($data, $cl)) != $cl) {
+      return respondXML(400, ['Error' => ['Code' => 'IncompleteBody']]);
+    }
+    $store->store_file($key, $data);
+    
+    return respond(200, '');
   }
-  return respond(405, 'not implemented');
 }
 
 sub handle_DELETE {
@@ -283,7 +304,7 @@ sub handle_DELETE {
   }  
 
   if ($store->delete_file($key)) {
-    return respond(204, '');
+    return [204, [], []];
   } else {
     return respondXML(500, ['Error' => ['Code' => 'InternalError']]);
   }
