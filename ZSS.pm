@@ -78,7 +78,7 @@ sub check_policy {
     };
     case 'content-length-range' {
       my $len = $self->{request}->{env}->{CONTENT_LENGTH};
-      $self->log("Length: ".$len.", Limits: ".$key.", ".$val);
+      # $self->log("Length: ".$len.", Limits: ".$key.", ".$val);
       return 1 if (($len > $key) && ($len < $val));
     }
   }
@@ -173,14 +173,14 @@ sub handle_POST {
   if ($self->{request}->{starttime} > $expiration) {
     return respond(403, 'timed out');
   }
-  $self->log("Expires:".$expiration."; Starttime:".$self->{request}->{starttime});
+  # $self->log("Expires:".$expiration."; Starttime:".$self->{request}->{starttime});
   
   foreach my $ref (@{$json->{conditions}}) {
     if (ref $ref eq 'HASH') {
       foreach my $key (keys %{$ref}) {
         my $val = encode("utf8", $$ref{$key}); #TODO: better to decode parameter? Is unicode normalization required?
         my $result = $self->check_policy('eq', $key, $val);
-        $self->log($key."=".$val."(".$result.")");
+        # $self->log($key."=".$val."(".$result.")");
         unless ($result == 1) {return respond(403, 'policy invalid');}
       }
     }
@@ -189,7 +189,7 @@ sub handle_POST {
       $key =~ s/^\$//;
       my $val = encode("utf8", $$ref[2]); #TODO: better to decode parameter? Is unicode normalization required?
       my $result = $self->check_policy($$ref[0], $key, $val);
-      $self->log($key." ".$$ref[0]." ".$val." (".$result.")");
+      # $self->log($key." ".$$ref[0]." ".$val." (".$result.")");
       unless ($result) {return respond(403, 'policy invalid');}
     }
   }
