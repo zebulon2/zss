@@ -279,12 +279,14 @@ sub handle_DELETE {
   my $key = $request->{key};
 
   unless ($store->check_exists($key)) {
-    return respond(404, 'File not found');
+    return respondXML(404, ['Error' => ['Code' => 'NoSuchKey', 'Message' => 'The resource you requested does not exist', 'Resource' => $key]]);
   }  
 
-  # TODO: Delete file
-
-  return respond(204, "success");
+  if ($store->delete_file($key)) {
+    return respond(204, '');
+  } else {
+    return respondXML(500, ['Error' => ['Code' => 'InternalError']]);
+  }
 
 }
 

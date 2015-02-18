@@ -20,28 +20,43 @@ sub get_path {
   my $self = shift;
   my $key = shift;
 
-  my $filename = md5_hex($key);
+  my $dirname = md5_hex($key);
 
-  my $dir = $self->{storagepath} . substr($filename, 0, 1) . "/" . $filename ."/";
+  my $dir = $self->{storagepath} . substr($dirname, 0, 1) . "/" . $dirname ."/";
 
-  make_path($dir);
+  return $dir;
+}
 
-  return $dir . escape_filename($key, '_');
+sub get_filename {
+  my $self = shift;
+  my $key = shift;
+
+  return escape_filename($key, '_');
+}
+
+sub get_filepath {
+  my $self = shift;
+  my $key = shift;
+
+  return $self->get_path($key) . $self->get_filename($key);
 }
 
 sub store_file {
   my $self = shift;
   my $key = shift;
-  my $file = shift;
+  my $data = shift;
 
-  my $filepath = $self->get_path($key);
+  my $dir = $self->get_path($key);
+  my $file = $self->get_filename($key);
+
+  make_path($dir);
   #$self->log($filepath);
  
  # TODO: check if file already exists
   # what to do then? overwrite?
 
-  open(my $fh, '>:raw', $filepath);
-  print $fh ($file);
+  open(my $fh, '>:raw', $dir.$file);
+  print $fh ($data);
   close($fh);
  # TODO: add another file with the metadata (Content-MD5, Content-Type, ...)
 
@@ -51,7 +66,7 @@ sub check_exists{
   my $self = shift;
   my $key = shift;
   
-  my $path = $self->get_path($key);
+  my $path = $self->get_filepath($key);
   unless (-e $path){
     return 0;
   }
@@ -65,7 +80,7 @@ sub retrieve_file {
   unless($self->check_exists($key)){
     return undef;
   }
-  my $path = $self->get_path($key);
+  my $path = $self->get_filepath($key);
   open(my $fh, '<:raw', $path);
   return $fh;
 }
@@ -74,7 +89,7 @@ sub get_size{
   my $self = shift;
   my $key = shift;
 
-  my $path = $self->get_path($key);
+  my $path = $self->get_filepath($key);
   
   unless (-e $path) {
    return 0;
@@ -88,10 +103,26 @@ sub link_files{
   my $source_key = shift;
   my $destination_key = shift;
 
-  my $source_path = $self->get_path($source_key);
-  my $destination_path = $self->get_path($destination_key);
+  my $source_path = $self->get_filepath($source_key);
+  my $destination_dir = $self->get_path($destination_key);
+  my $destination_path = $self->get_filepath($destination_key);
+
+  make_path($destination_dir);
 
   return link($source_path, $destination_path);
+}
+
+sub delete_file{
+  my $self = shift;
+  my $key = shift;
+
+  my $dir = $self->get_path($key);
+  my $file = $self->get_filename($key);
+
+  unless (unlink($dir.$file)) {
+    return 1;
+  }
+  return rmdir($dir);
 }
 
 1;
