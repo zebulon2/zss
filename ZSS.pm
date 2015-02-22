@@ -199,7 +199,9 @@ sub handle_POST {
   my $policy = $req->parameters->get('policy');
   my $signature = $req->parameters->get('signature');
 
-  # TODO: check if policy and signature are present
+  unless ($signature && $policy) {
+    return respondXML(400, ['Error' => ['Code' => 'InvalidPolicyDocument']]);
+  }
   
   unless ($signature eq encode_base64(hmac_sha1($policy, $self->{buckets}->{$request->{bucket}}->{secretkey}), '')) {
     return respondXML(403, ['Error' => ['Code' => 'SignatureDoesNotMatch']]);
