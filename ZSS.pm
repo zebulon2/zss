@@ -248,7 +248,12 @@ sub handle_POST {
   my $key = $req->parameters->get('key');
   my $store = $self->{buckets}->{$request->{bucket}}->{store};
 
-  $store->store_file($key, $req->parameters->get('file'));
+  my $meta = {
+    'md5' => unpack('H*', decode_base64($md5)),
+    'acl' => $self->{req}->parameters->get('acl') || 'private'
+  };
+
+  $store->store_file($key, $req->parameters->get('file'), JSON::XS->new->utf8->encode($meta));
   
   my $status = $req->parameters->get('success_action_status');
   $status = '403' unless (($status eq '200') || ($status eq '201'));
@@ -328,7 +333,19 @@ sub handle_PUT {
     if (($input->read($data, $cl)) != $cl) {
       return respondXML(400, ['Error' => ['Code' => 'IncompleteBody']]);
     }
-    $store->store_file($key, $data);
+
+    my $md5 = md5_base64($data);
+
+    my $meta = {};
+    $meta->{type} = $env->{CONTENT_TYPE} if ($env->{CONTENT_TYPE});
+    $meta->{acl} = $env->{HTTP_X_AMZ_ACL} || 'private';
+    $meta->{md5} = unpack('H*', decode_base64($md5));
+
+    if ($env->{HTTP_CONTENT_MD5}) {
+      return respondXML(400, ['Error' => ['Code' => 'BadDigest']]) unless ($env->{HTTP_CONTENT_MD5} eq $md5.'==');
+    }
+    
+    $store->store_file($key, $data, JSON::XS->new->utf8->encode($meta));
     
     return respond(200, '');
   }
