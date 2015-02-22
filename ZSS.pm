@@ -272,12 +272,23 @@ sub handle_HEAD {
 
   my $store = $self->{buckets}->{$request->{bucket}}->{store};
   
-  my $size = $store->get_size($key);
-  if ($size == 0){
+  unless ($store->check_exists($key)) {
     return respondXML(404, ['Error' => ['Code' => 'NoSuchKey']]);
   }
 
-  return [200, ['Content-Length' => $size], []];
+  my $meta = JSON::XS->new->utf8->decode($store->retrieve_filemeta($key));
+
+  my $headers = ['Content-Length' => $store->get_size($key)];
+  if ($meta->{type}) {
+    push @$headers, 'Content-Type';
+    push @$headers, $meta->{type};
+  }
+  if ($meta->{md5}) {
+    push @$headers, 'ETag';
+    push @$headers, "\"".$meta->{md5}."\"";
+  }
+  
+  return [200, $headers, []];
 }
 
 sub handle_GET {
@@ -293,7 +304,22 @@ sub handle_GET {
   unless($store->check_exists($key)){
     return respondXML(404, ['Error' => ['Code' => 'NoSuchKey']]);
   }
-  return [200, ['Content-Length' => $store->get_size($key)], $store->retrieve_file($key)];
+
+  my $meta = JSON::XS->new->utf8->decode($store->retrieve_filemeta($key));
+
+  my $headers = ['Content-Length' => $store->get_size($key)];
+  my $ct = $request->{uri}->query_param('response-content-type');
+  $ct = $meta->{type} unless ($ct);
+  if ($ct) {
+    push @$headers, 'Content-Type';
+    push @$headers, $ct;
+  }
+  if ($meta->{md5}) {
+    push @$headers, 'ETag';
+    push @$headers, "\"".$meta->{md5}."\"";
+  }
+  
+  return [200, $headers, $store->retrieve_file($key)];
 }
 
 
@@ -306,9 +332,10 @@ sub handle_PUT {
 
   my $key = $request->{key};
 
+  my $cl = $env->{CONTENT_LENGTH};
   my $source = $env->{HTTP_X_AMZ_COPY_SOURCE};
 
-  if ($source) {
+  if (($cl == 0) && ($source)) {
     # Copy File
     $source = uri_unescape($source);
     (my $sourceBucket, my $sourceKey) = $source =~ m/^\/([^\?\/]*)\/?([^\?]*)/;
@@ -317,10 +344,9 @@ sub handle_PUT {
 
     my $res = $store->link_files($sourceKey, $key);
 
-    $self->log($res);
-
     if ($res) {
-      return respondXML(200, ['CopyObjectResult' => [ 'LastModified' => '2012', 'ETag' => 'bla']]);
+      my $meta = JSON::XS->new->utf8->decode($store->retrieve_filemeta($key));
+      return respondXML(200, ['CopyObjectResult' => [ 'LastModified' => '2012', 'ETag' => $meta->{md5}]]);
     } else {
       return respondXML(500, ['Error' => ['Code' => 'InternalError']]);
     }
