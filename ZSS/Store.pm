@@ -45,21 +45,26 @@ sub store_file {
   my $self = shift;
   my $key = shift;
   my $data = shift;
+  my $meta = shift;
 
   my $dir = $self->get_path($key);
   my $file = $self->get_filename($key);
 
   make_path($dir);
-  #$self->log($filepath);
- 
- # TODO: check if file already exists
-  # what to do then? overwrite?
 
-  open(my $fh, '>:raw', $dir.$file);
+  # Write data to temp file and rename to the desired name
+  # This only changes this file and not other hardlinks
+  open(my $fh, '>:raw', $dir.$file.".temp");
   print $fh ($data);
   close($fh);
- # TODO: add another file with the metadata (Content-MD5, Content-Type, ...)
+  rename($dir.$file.".temp", $dir.$file);
 
+  if ($meta) {
+    open($fh, '>:raw', $dir.$file.".meta.temp");
+    print $fh ($meta);
+    close($fh);
+    rename($dir.$file.".meta.temp", $dir.$file.".meta");
+  }
 }
 
 sub check_exists{
@@ -83,6 +88,32 @@ sub retrieve_file {
   my $path = $self->get_filepath($key);
   open(my $fh, '<:raw', $path);
   return $fh;
+}
+
+sub retrieve_filemeta {
+  my $self = shift;
+  my $key = shift;
+
+  unless($self->check_exists($key)){
+    return undef;
+  }
+  my $metafile = $self->get_filepath($key) . ".meta";
+
+  # check if metadata is present
+  unless (-e $metafile) {
+    return undef;
+  }
+
+  # limt size of metadata to 8kB
+  my $size = -s $metafile;
+  unless ($size <= 8192) {
+    return undef;
+  }
+
+  my $meta;
+  open(my $fh, '<:raw', $metafile);
+  read ($fh, $meta, $size);
+  return $meta;
 }
 
 sub get_size{
@@ -109,6 +140,8 @@ sub link_files{
 
   make_path($destination_dir);
 
+  link($source_path.".meta", $destination_path.".meta");
+
   return link($source_path, $destination_path);
 }
 
@@ -118,6 +151,9 @@ sub delete_file{
 
   my $dir = $self->get_path($key);
   my $file = $self->get_filename($key);
+
+  # Remove metadata
+  unlink($dir.$file.".meta");
 
   unless (unlink($dir.$file)) {
     return 1;
