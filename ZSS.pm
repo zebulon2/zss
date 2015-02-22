@@ -99,28 +99,64 @@ sub get_signature {
   
   my $secret = $self->{buckets}->{$request->{bucket}}->{secretkey};
 
-  my $amzstring = '';
-  for my $key (sort(grep(/^HTTP_X_AMZ/, keys %$env))) {
-    my $value = $env->{$key};
-    $key =~ s/_/-/g;
-    $amzstring .= lc(substr($key,5)).":".$value."\n";
-  }
-  
-  my $date;
-  if ($env->{QUERY_STRING} eq '') {
-    $date = $env->{HTTP_DATE};
-  } else {
-    $date = $request->{uri}->query_param('Expires');
+  my $query = {};
+  my $use_query = undef;
+
+  if ($env->{QUERY_STRING}) {
+    $query = $request->{uri}->query_form_hash();
   }
 
-  # TODO: date is mandatory, handle that case
+  if ($query->{Signature}) {
+    $use_query = 1;
+  }
+  
+  # X-AMZ headers or query parameters
+  my $amzstring = '';
+  if ($use_query) {
+    for my $key (sort(grep(/^x-amz/, keys %$query))) {
+      my $value = $query->{$key};
+      $amzstring .= lc($key).":".$value."\n";
+    }
+  } else {
+    for my $key (sort(grep(/^HTTP_X_AMZ/, keys %$env))) {
+      next if ($key eq 'HTTP_X_AMZ_DATE');
+      my $value = $env->{$key};
+      $key =~ s/_/-/g;
+      $amzstring .= lc(substr($key,5)).":".$value."\n";
+    }
+  }
+
+  # Date Header or Expires query parameter
+  my $date;
+  if ($use_query) {
+    $date = $query->{Expires};
+  } else {
+    if ($env->{HTTP_X_AMZ_DATE}) {
+      $date = $env->{HTTP_X_AMZ_DATE};
+    } else {
+      $date = $env->{HTTP_DATE};
+    }
+  }
+
+  # changing response headers parameters
+  my $additional_params = '';
+  if ($query) {
+    my $sep = '?';
+    my @params = qw(response-cache-control response-content-disposition response-content-encoding response-content-language response-content-type response-expires);
+    for my $key (@params) {
+      if ($query->{$key}) {
+        $additional_params .= $sep.$key."=".$query->{$key};
+        $sep = '&' if ($sep eq '?');
+      }
+    }
+  }
   
   my $stringtosign = $env->{REQUEST_METHOD}."\n".
                      ($env->{HTTP_CONTENT_MD5} || '')."\n".
                      ($env->{CONTENT_TYPE} || '')."\n".
                      ($date || '')."\n".
                      $amzstring.
-                     "/".$request->{bucket}."/".$request->{key_escaped};
+                     "/".$request->{bucket}."/".$request->{key_escaped}.$additional_params;
 
   # $self->log("Stringtosign:".$stringtosign."End");
 
