@@ -169,7 +169,6 @@ sub check_signature {
   my $request = $self->{request};
   my $env = $request->{env};
   
-  my $signature = $self->get_signature();
   my $received_signature;
   
   if ($env->{QUERY_STRING} eq '') {
@@ -177,6 +176,12 @@ sub check_signature {
   } else {
     $received_signature = $request->{uri}->query_param('Signature') || '';
   }
+
+  unless ($received_signature) {
+    return 0;
+  }
+
+  my $signature = $self->get_signature();
 
   # $self->log("Check Signature: $received_signature == $signature");
   
