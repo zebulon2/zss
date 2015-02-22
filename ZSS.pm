@@ -202,17 +202,17 @@ sub handle_POST {
   # TODO: check if policy and signature are present
   
   unless ($signature eq encode_base64(hmac_sha1($policy, $self->{buckets}->{$request->{bucket}}->{secretkey}), '')) {
-    return respond('403', 'invalid signature');
+    return respondXML(403, ['Error' => ['Code' => 'SignatureDoesNotMatch']]);
   }
 
   my $json = JSON::XS->new->relaxed->decode(decode_base64($policy));
-  
-  
-  return respond(403, 'no expiration given.') unless (defined $json->{expiration});
+
+  return respondXML(400, ['Error' => ['Code' => 'InvalidPolicyDocument', 'Message' => 'No expiration time specified in policy document']]) unless (defined $json->{expiration});
+
   my $expiration = Date::Parse::str2time($json->{expiration});
 
   if ($self->{request}->{starttime} > $expiration) {
-    return respond(403, 'timed out');
+    return respondXML(400, ['Error' => ['Code' => 'ExpiredToken']]);
   }
   # $self->log("Expires:".$expiration."; Starttime:".$self->{request}->{starttime});
   
@@ -222,7 +222,7 @@ sub handle_POST {
         my $val = encode("utf8", $$ref{$key}); #TODO: better to decode parameter? Is unicode normalization required?
         my $result = $self->check_policy('eq', $key, $val);
         # $self->log($key."=".$val."(".$result.")");
-        unless ($result == 1) {return respond(403, 'policy invalid');}
+        unless ($result) {return respondXML(400, ['Error' => ['Code' => 'InvalidPolicyDocument']])};
       }
     }
     if (ref $ref eq 'ARRAY') {
@@ -231,15 +231,18 @@ sub handle_POST {
       my $val = encode("utf8", $$ref[2]); #TODO: better to decode parameter? Is unicode normalization required?
       my $result = $self->check_policy($$ref[0], $key, $val);
       # $self->log($key." ".$$ref[0]." ".$val." (".$result.")");
-      unless ($result) {return respond(403, 'policy invalid');}
+      unless ($result) {return respondXML(400, ['Error' => ['Code' => 'InvalidPolicyDocument']])};
     }
   }
 
-  if (not defined $req->parameters->get('file')) {
-    return respond(404, 'file missing');
+  my $data = $req->parameters->get('file');
+  unless ($data) {
+    return respondXML(400, ['Error' => ['Code' => 'IncorrectNumberOfFilesInPostRequest']]);
   }
-  unless ($req->parameters->get('Content-MD5') eq md5_base64($req->parameters->get('file')).'==') {
-    return respond('403', 'invalid file md5');
+
+  my $md5 = md5_base64($data);
+  unless ($req->parameters->get('Content-MD5') eq $md5.'==') {
+    return respondXML(400, ['Error' => ['Code' => 'BadDigest']])
   }
   
   my $key = $req->parameters->get('key');
@@ -266,8 +269,9 @@ sub handle_HEAD {
   
   my $size = $store->get_size($key);
   if ($size == 0){
-    return respond(404, 'File not found');
+    return respondXML(404, ['Error' => ['Code' => 'NoSuchKey']]);
   }
+
   return [200, ['Content-Length' => $size], []];
 }
 
@@ -282,7 +286,7 @@ sub handle_GET {
   my $store = $self->{buckets}->{$request->{bucket}}->{store};
   
   unless($store->check_exists($key)){
-    return respond(404, 'File not found');
+    return respondXML(404, ['Error' => ['Code' => 'NoSuchKey']]);
   }
   return [200, ['Content-Length' => $store->get_size($key)], $store->retrieve_file($key)];
 }
