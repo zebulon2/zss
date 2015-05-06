@@ -14,6 +14,7 @@ use URI::QueryParam;
 use URI::Escape;
 use Switch;
 use Encode;
+use Try::Tiny;
 
 use ZSS::Store;
 
@@ -207,7 +208,12 @@ sub handle_POST {
     return respondXML(403, ['Error' => ['Code' => 'SignatureDoesNotMatch']]);
   }
 
-  my $json = JSON::XS->new->relaxed->decode(decode_base64($policy));
+  my $json;
+  try {
+    $json = JSON::XS->new->relaxed->decode(decode_base64($policy));
+  } catch {
+    return respondXML(400, ['Error' => ['Code' => 'InvalidPolicyDocument']]);
+  };
 
   return respondXML(400, ['Error' => ['Code' => 'InvalidPolicyDocument', 'Message' => 'No expiration time specified in policy document']]) unless (defined $json->{expiration});
 
@@ -278,7 +284,13 @@ sub handle_HEAD {
     return respondXML(404, ['Error' => ['Code' => 'NoSuchKey']]);
   }
 
-  my $meta = JSON::XS->new->utf8->decode($store->retrieve_filemeta($key));
+  my $meta;
+  try {
+    $meta = JSON::XS->new->utf8->decode($store->retrieve_filemeta($key));
+  };
+  unless (ref($meta) eq 'HASH') {
+    $meta = {};
+  }
 
   my $headers = ['Content-Length' => $store->get_size($key)];
   if ($meta->{type}) {
@@ -307,7 +319,13 @@ sub handle_GET {
     return respondXML(404, ['Error' => ['Code' => 'NoSuchKey']]);
   }
 
-  my $meta = JSON::XS->new->utf8->decode($store->retrieve_filemeta($key));
+  my $meta;
+  try {
+    $meta = JSON::XS->new->utf8->decode($store->retrieve_filemeta($key));
+  };
+  unless (ref($meta) eq 'HASH') {
+    $meta = {};
+  }
 
   my $headers = ['Content-Length' => $store->get_size($key)];
   my $ct = $request->{uri}->query_param('response-content-type');
@@ -347,7 +365,15 @@ sub handle_PUT {
     my $res = $store->link_files($sourceKey, $key);
 
     if ($res) {
-      my $meta = JSON::XS->new->utf8->decode($store->retrieve_filemeta($key));
+
+      my $meta;
+      try {
+        $meta = JSON::XS->new->utf8->decode($store->retrieve_filemeta($key));
+      };
+      unless (ref($meta) eq 'HASH') {
+        $meta = {};
+      }
+
       return respondXML(200, ['CopyObjectResult' => [ 'LastModified' => '2012', 'ETag' => $meta->{md5}]]);
     } else {
       return respondXML(500, ['Error' => ['Code' => 'InternalError']]);
